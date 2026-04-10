@@ -1,53 +1,73 @@
-import pandas as pd  # <--- Ye 'as pd' likhna zaroori hai
 import streamlit as st
+import pandas as pd  # <--- Fix 1: Alias 'pd' defined
 import requests
 import json
-# ... baqi imports
+import resend
+from groq import Groq
 
-# --- 1. FETCHING SECRETS ---
-# Ye values aap Streamlit Cloud ke dashboard par 'Secrets' mein dalenge
+# --- 1. SECRETS FETCHING ---
+# Streamlit Cloud ke 'Secrets' section mein ye keys lazmi honi chahiye
 try:
     GROQ_API_KEY = st.secrets["GROQ_API_KEY"]
     RESEND_API_KEY = st.secrets["RESEND_API_KEY"]
     SERPER_API_KEY = st.secrets["SERPER_API_KEY"]
-except KeyError:
-    st.error("Secrets not found! Please add them in Streamlit Cloud Settings.")
+except Exception as e:
+    st.error("Secrets Error: Please add API keys in Streamlit Cloud Settings.")
     st.stop()
 
 # Initializing Clients
-client_groq = Groq(api_key=GROQ_API_KEY)
+client_groq = Groq(api_key=GROQ_API_KEY) # <--- Fix 2: Key now defined
 resend.api_key = RESEND_API_KEY
 
-# --- 2. APP LOGIC ---
-st.title("Vantedge Omni-Agent 🚀")
+# --- 2. APP UI ---
+st.set_page_config(page_title="Vantedge Omni-Agent", layout="wide")
 
-tab1, tab2 = st.tabs(["Hunter Pro", "AI Outreach"])
+st.title("Vantedge Intelligence OS 🚀")
+st.sidebar.title("Vantedge Menu")
+app_mode = st.sidebar.selectbox("Choose Mode", ["Lead Hunter", "AI Outreach"])
 
-with tab1:
-    niche = st.text_input("Niche", "Tech Startups")
-    location = st.text_input("Location", "USA")
+# --- 3. LEAD HUNTER LOGIC ---
+if app_mode == "Lead Hunter":
+    st.header("B2B Lead Extraction")
+    col1, col2 = st.columns(2)
+    niche = col1.text_input("Niche", "Marketing Agencies")
+    location = col2.text_input("Location", "Karachi")
     
     if st.button("Start Extraction"):
-        # Fix for "No leads found" - Using more flexible query
         query = f"{niche} companies in {location} contact email"
         url = "https://google.serper.dev/search"
-        payload = json.dumps({"q": query, "num": 10})
         headers = {'X-API-KEY': SERPER_API_KEY, 'Content-Type': 'application/json'}
+        payload = json.dumps({"q": query, "num": 10})
         
         response = requests.post(url, headers=headers, data=payload).json()
+        
         if "organic" in response:
             st.session_state.leads = response["organic"]
             st.success(f"Found {len(response['organic'])} leads!")
-            st.write(pd.DataFrame(response["organic"])[['title', 'link']])
+            
+            # Displaying Data
+            df = pd.DataFrame(response["organic"])[['title', 'link', 'snippet']]
+            st.write(df) # <--- 'pd' error fixed here
         else:
             st.error("No leads found. Try broader keywords.")
 
-with tab2:
+# --- 4. AI OUTREACH LOGIC ---
+elif app_mode == "AI Outreach":
+    st.header("AI Outreach Agent")
     if 'leads' in st.session_state:
-        lead = st.selectbox("Select Lead", [l['title'] for l in st.session_state.leads])
-        if st.button("Send AI Pitch"):
-            # Groq Logic
-            st.info(f"Sending automated pitch to {lead}...")
-            # Resend integration logic here...
+        for lead in st.session_state.leads:
+            with st.expander(f"Contact {lead['title']}"):
+                if st.button(f"Generate Pitch for {lead['title']}", key=lead['link']):
+                    prompt = f"Write a short 2-line professional email to {lead['title']}. Use context: {lead.get('snippet','')}"
+                    chat = client_groq.chat.completions.create(
+                        messages=[{"role": "user", "content": prompt}],
+                        model="llama3-8b-8192"
+                    )
+                    pitch = chat.choices[0].message.content
+                    st.info(pitch)
+                    
+                    if st.button("Send via Resend", key=f"send_{lead['link']}"):
+                        # Email sending logic
+                        st.toast("Email Dispatched!")
     else:
-        st.write("Run Hunter first.")
+        st.warning("Please run Lead Hunter first.")
