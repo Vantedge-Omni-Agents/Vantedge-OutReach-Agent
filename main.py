@@ -1,8 +1,8 @@
+import pandas as pd  # <--- Ye 'as pd' likhna zaroori hai
 import streamlit as st
 import requests
 import json
-import resend
-from groq import Groq
+# ... baqi imports
 
 # --- 1. FETCHING SECRETS ---
 # Ye values aap Streamlit Cloud ke dashboard par 'Secrets' mein dalenge
