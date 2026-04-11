@@ -6,77 +6,77 @@ import json
 from urllib.parse import urlparse
 
 # --- 1. CONFIG ---
-st.set_page_config(page_title="Vantedge Extreme Bulk", layout="wide")
-st.title("Vantedge Extreme Bulk Hunter 🚀")
+st.set_page_config(page_title="Vantedge Extreme Hunter", layout="wide")
+st.title("Vantedge Extreme Lead Hunter 🚀")
 
-# --- 2. MULTI-PAGE SEARCH ENGINE ---
-def get_extreme_bulk(niche, city):
-    all_organic_results = []
-    headers = {'X-API-KEY': st.secrets["SERPER_API_KEY"], 'Content-Type': 'application/json'}
+# --- 2. MULTI-PAGE SEARCH (Quantity barhanay ke liye) ---
+def get_extreme_leads(niche, city):
+    all_results = []
+    headers = {
+        'X-API-KEY': st.secrets["SERPER_API_KEY"], 
+        'Content-Type': 'application/json'
+    }
     
-    # Hum 3 alag pages se data uthayenge (Total 300 possible links)
-    pages_to_scan = [0, 10, 20] 
-    
-    for page_start in pages_to_scan:
+    # Page 1 (0) aur Page 2 (10) dono scan karein
+    for start_index in [0, 10]:
         payload = json.dumps({
             "q": f'"{niche}" {city} -site:clutch.co -site:facebook.com',
             "num": 100,
-            "start": page_start
+            "start": start_index
         })
         try:
-            res = requests.post("https://google.serper.dev/search", headers=headers, data=payload).json()
-            if "organic" in res:
-                all_organic_results.extend(res["organic"])
+            r = requests.post("https://google.serper.dev/search", headers=headers, data=payload).json()
+            if "organic" in r:
+                all_organic = r["organic"]
+                all_results.extend(all_organic)
         except:
             continue
-            
-    return all_organic_results
+    return all_results
 
-# --- 3. FAST EMAIL EXTRACTOR ---
+# --- 3. FAST EMAIL FINDER ---
 def fast_extract(url):
     try:
-        # Timeout kam rakha hai taake 300 sites jaldi scan hon
-        resp = requests.get(url, headers={'User-Agent': 'Mozilla/5.0'}, timeout=4)
-        emails = re.findall(r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}', resp.text)
+        res = requests.get(url, headers={'User-Agent': 'Mozilla/5.0'}, timeout=5)
+        emails = re.findall(r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}', res.text)
         
-        blacklist = ['.webp', '.png', '.jpg', 'sentry.io', 'example.com', 'yourcompany']
+        # Filtering junk
+        blacklist = ['.webp', '.png', '.jpg', 'sentry.io', 'example', 'yourcompany']
         valid = [e.lower() for e in set(emails) if not any(x in e.lower() for x in blacklist)]
         
         return valid[0] if valid else None
     except:
         return None
 
-# --- 4. UI LOGIC ---
+# --- 4. MAIN UI ---
 c1, c2 = st.columns(2)
-niche = c1.text_input("Niche", placeholder="e.g. Real Estate")
-city = c2.text_input("City", placeholder="e.g. Dubai")
+target_niche = c1.text_input("Niche", placeholder="e.g. Marketing Agency")
+target_city = c2.text_input("City", placeholder="e.g. United States")
 
-if st.button("Start Extreme Bulk Hunting"):
-    if niche and city:
-        with st.spinner("Scanning 200+ websites... This might take 2-3 minutes."):
-            raw_results = get_extreme_bulk(niche, city)
+if st.button("Start Bulk Extraction"):
+    if target_niche and target_city:
+        with st.spinner("Scanning 100+ websites... please wait 1-2 minutes."):
+            search_data = get_extreme_leads(target_niche, target_city)
             
             # Remove duplicate links
-            unique_links = {item['link']: item for item in raw_results}.values()
+            unique_data = {item['link']: item for item in search_data}.values()
             
-            final_leads = []
-            progress_bar = st.progress(0)
-            total = len(unique_links)
+            leads_found = []
+            p_bar = st.progress(0)
             
-            for i, item in enumerate(unique_links):
+            for i, item in enumerate(unique_data):
                 email = fast_extract(item['link'])
                 if email:
-                    final_leads.append({
+                    leads_found.append({
                         "Business": item.get('title'),
                         "Website": item.get('link'),
                         "Email": email
                     })
-                progress_bar.progress((i + 1) / total)
+                p_bar.progress((i + 1) / len(unique_data))
             
-            if final_leads:
-                st.success(f"Found {len(final_leads)} leads successfully!")
-                df = pd.DataFrame(final_leads)
+            if leads_found:
+                st.success(f"Found {len(leads_found)} Leads!")
+                df = pd.DataFrame(leads_found)
                 st.dataframe(df)
-                st.download_button("Download CSV", df.to_csv(index=False), "extreme_leads.csv")
+                st.download_button("Download Data", df.to_csv(index=False), "leads.csv")
             else:
                 st.warning("No emails found. Try a broader niche.")
