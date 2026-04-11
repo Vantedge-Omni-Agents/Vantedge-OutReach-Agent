@@ -36,7 +36,7 @@ offer = st.text_area("Your Offer", "I provide high-quality AI automation and lea
 if st.button("Start Automatic Process"):
     with st.spinner("Hunting Leads..."):
         headers = {'X-API-KEY': st.secrets["SERPER_API_KEY"], 'Content-Type': 'application/json'}
-        payload = {"q": f"{niche} in {city}", "num": 20}
+        payload = {"q": f"{niche} in {city}", "num": 50}
         
         try:
             res = requests.post("https://google.serper.dev/places", headers=headers, json=payload).json()
