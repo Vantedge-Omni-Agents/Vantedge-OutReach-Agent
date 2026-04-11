@@ -110,4 +110,4 @@ with tabs[1]:
                         except:
                             st.error("Check your Gmail App Password.")
     else:
-        st.info("Pehle 'Lead Hunter' tab mein real business leads search karein.")
+        st.info("First Fetch the Leads From The Lead Hunter Tab!.")
