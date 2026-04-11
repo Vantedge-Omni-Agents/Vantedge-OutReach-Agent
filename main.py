@@ -7,7 +7,7 @@ from email.mime.text import MIMEText
 from groq import Groq
 
 # --- 1. SETUP & SECRETS ---
-st.set_page_config(page_title="Vantedge Intelligence OS", layout="wide", page_icon="🚀")
+st.set_page_config(page_title="Vantedge-OutReach-Agent", layout="wide", page_icon="🚀")
 
 try:
     GROQ_API_KEY = st.secrets["GROQ_API_KEY"]
@@ -15,7 +15,7 @@ try:
     GMAIL_USER = st.secrets["GMAIL_USER"]
     GMAIL_PASSWORD = st.secrets["GMAIL_PASSWORD"]
 except Exception as e:
-    st.error("⚠️ API Keys ya Gmail Secrets missing hain! Streamlit settings check karein.")
+    st.error("⚠️ API Keys or Gmail Secrets are missing! Please check Streamlit settings.")
     st.stop()
 
 client_groq = Groq(api_key=GROQ_API_KEY)
@@ -63,7 +63,7 @@ def generate_pitch(target, context):
         return f"AI Error: {e}"
 
 # --- 3. MAIN UI ---
-st.title("Vantedge Intelligence Pro 🚀")
+st.title("Vantedge-OutReach-Agent 🚀")
 st.caption("Direct Gmail Integration | AI-Driven Outreach")
 
 tab1, tab2 = st.tabs(["🔍 Lead Hunter", "📧 AI Outreach"])
@@ -100,4 +100,4 @@ with tab2:
                         else:
                             st.warning("Pehle recipient ka email address likhein.")
     else:
-        st.info("Pehle 'Lead Hunter' tab mein leads nikalen.")
+        st.info("Fetch leads first in the Lead Hunter Tab!")
