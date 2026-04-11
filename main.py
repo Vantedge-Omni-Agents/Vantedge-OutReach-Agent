@@ -1,117 +1,103 @@
 import streamlit as st
-import pandas as pd  # Pandas ko 'pd' ke taur par import kiya gaya hai
+import pandas as pd
 import requests
 import json
-import resend
+import smtplib
+from email.mime.text import MIMEText
 from groq import Groq
 
-# --- 1. CONFIGURATION & SECRETS ---
+# --- 1. SETUP & SECRETS ---
 st.set_page_config(page_title="Vantedge Intelligence OS", layout="wide", page_icon="🚀")
 
-# Secrets fetch karne ka safe tareeka
 try:
     GROQ_API_KEY = st.secrets["GROQ_API_KEY"]
-    RESEND_API_KEY = st.secrets["RESEND_API_KEY"]
     SERPER_API_KEY = st.secrets["SERPER_API_KEY"]
+    GMAIL_USER = st.secrets["GMAIL_USER"]
+    GMAIL_PASSWORD = st.secrets["GMAIL_PASSWORD"]
 except Exception as e:
-    st.error("⚠️ API Keys Missing! Please add them in Streamlit Cloud Secrets.")
+    st.error("⚠️ API Keys ya Gmail Secrets missing hain! Streamlit settings check karein.")
     st.stop()
 
-# Clients initialize karna
 client_groq = Groq(api_key=GROQ_API_KEY)
-resend.api_key = RESEND_API_KEY
 
 # --- 2. CORE FUNCTIONS ---
 
-def get_b2b_leads(niche, location):
-    """Serper API se leads nikalne ke liye optimized function"""
+def send_gmail_outreach(to_email, subject, body):
+    """Seedha aapke Gmail account se email bhejta hai"""
+    msg = MIMEText(body)
+    msg['Subject'] = subject
+    msg['From'] = f"Salman (Vantedge) <{GMAIL_USER}>"
+    msg['To'] = to_email
+
+    try:
+        with smtplib.SMTP_SSL('smtp.gmail.com', 465) as server:
+            server.login(GMAIL_USER, GMAIL_PASSWORD)
+            server.sendmail(GMAIL_USER, to_email, msg.as_string())
+        return True
+    except Exception as e:
+        st.error(f"Gmail Send Error: {e}")
+        return False
+
+def get_leads(niche, location):
+    """High-quality leads fetch karne ke liye"""
     url = "https://google.serper.dev/search"
-    # Query ko broad rakha hai taake 'No leads found' ka masla na ho
-    search_query = f"{niche} companies in {location} contact email"
-    payload = json.dumps({"q": search_query, "num": 10})
+    query = f"{niche} companies in {location} contact email"
+    payload = json.dumps({"q": query, "num": 10})
     headers = {'X-API-KEY': SERPER_API_KEY, 'Content-Type': 'application/json'}
     
-    try:
-        response = requests.post(url, headers=headers, data=payload)
-        response.raise_for_status()
-        return response.json().get("organic", [])
-    except Exception as e:
-        st.error(f"Search Error: {str(e)}")
-        return []
+    res = requests.post(url, headers=headers, data=payload).json()
+    return res.get("organic", [])
 
-def generate_ai_pitch(target_name, context):
-    """Groq se personalized pitch generate karna (llama-3.3 model ke saath)"""
-    if not context:
-        context = "a professional business looking for digital growth"
-    
-    # Stable model name
-    model_name = "llama-3.3-70b-versatile"
-    
-    prompt = f"Write a short, punchy 2-line cold email to {target_name}. Focus on how Horbex Digital can help them scale. Context: {context}"
+def generate_pitch(target, context):
+    """Groq AI se personalized message generate karna"""
+    model = "llama-3.3-70b-versatile"
+    prompt = f"Write a professional 2-line intro email to {target}. Pitch Horbex Digital's marketing services. Context: {context}"
     
     try:
-        completion = client_groq.chat.completions.create(
+        chat = client_groq.chat.completions.create(
             messages=[{"role": "user", "content": prompt}],
-            model=model_name,
-            temperature=0.7
+            model=model
         )
-        return completion.choices[0].message.content
+        return chat.choices[0].message.content
     except Exception as e:
-        return f"AI Generation Error: {str(e)}"
+        return f"AI Error: {e}"
 
 # --- 3. MAIN UI ---
 st.title("Vantedge Intelligence Pro 🚀")
-st.caption("Karachi-based AI Lead Gen System | 2026 Edition")
+st.caption("Direct Gmail Integration | AI-Driven Outreach")
 
-menu = st.sidebar.selectbox("Navigate System", ["Lead Hunter", "Outreach Agent"])
+tab1, tab2 = st.tabs(["🔍 Lead Hunter", "📧 AI Outreach"])
 
-if menu == "Lead Hunter":
-    st.header("🔍 B2B Data Extraction")
-    col1, col2 = st.columns(2)
-    niche_input = col1.text_input("Target Niche", placeholder="e.g. Real Estate, Solar Agencies")
-    loc_input = col2.text_input("Target Location", placeholder="e.g. Karachi, Dubai, USA")
+with tab1:
+    c1, c2 = st.columns(2)
+    niche = c1.text_input("Business Niche")
+    loc = c2.text_input("Location")
     
-    if st.button("Extract Leads"):
-        if niche_input and loc_input:
-            with st.spinner("Mining high-intent leads..."):
-                leads_data = get_b2b_leads(niche_input, loc_input)
-                if leads_data:
-                    st.session_state.leads = leads_data
-                    st.success(f"Successfully extracted {len(leads_data)} leads!")
-                    # DataFrame display (pd error fixed here)
-                    df = pd.DataFrame(leads_data)[['title', 'link', 'snippet']]
-                    st.table(df)
-                else:
-                    st.warning("No leads found. Try adding keywords like 'hiring' or 'marketing'.")
-        else:
-            st.error("Please fill both niche and location.")
+    if st.button("Start Extraction"):
+        with st.spinner("Finding leads..."):
+            leads = get_leads(niche, loc)
+            st.session_state.leads = leads
+            st.success(f"Found {len(leads)} leads!")
+            st.table(pd.DataFrame(leads)[['title', 'link']])
 
-elif menu == "Outreach Agent":
-    st.header("🤖 AI Autonomous Outreach")
+with tab2:
     if 'leads' in st.session_state:
         for i, lead in enumerate(st.session_state.leads):
             with st.expander(f"Lead: {lead['title']}"):
-                st.write(f"**Context:** {lead.get('snippet', 'No data available')}")
+                # Manual Email Input (kyunke Serper hamesha email nahi deta)
+                target_email = st.text_input(f"Recipient Email for {lead['title']}", key=f"email_{i}")
                 
-                if st.button(f"Generate AI Pitch", key=f"gen_{i}"):
-                    with st.spinner("AI is crafting your message..."):
-                        pitch = generate_ai_pitch(lead['title'], lead.get('snippet', ''))
-                        st.session_state[f"pitch_{i}"] = pitch
-                        st.info(pitch)
+                if st.button(f"Draft AI Pitch", key=f"draft_{i}"):
+                    pitch = generate_pitch(lead['title'], lead.get('snippet', ''))
+                    st.session_state[f"p_{i}"] = pitch
+                    st.info(pitch)
                 
-                # Agar pitch generate ho chuki hai toh send button dikhao
-                if f"pitch_{i}" in st.session_state:
-                    if st.button(f"Send to {lead['title']}", key=f"send_{i}"):
-                        try:
-                            # Demo ke liye aapke email par jayega
-                            resend.Emails.send({
-                                "from": "Vantedge AI <onboarding@resend.dev>",
-                                "to": ["m.salmanraja000@gmail.com"],
-                                "subject": f"Inquiry for {lead['title']}",
-                                "html": f"<p>{st.session_state[f'pitch_{i}']}</p>"
-                            })
-                            st.success("✅ Pitch dispatched successfully!")
-                        except Exception as e:
-                            st.error(f"Mail Error: {str(e)}")
+                if f"p_{i}" in st.session_state:
+                    if st.button(f"Send via My Gmail", key=f"send_{i}"):
+                        if target_email:
+                            if send_gmail_outreach(target_email, "Business Collaboration", st.session_state[f"p_{i}"]):
+                                st.success("🚀 Email sent! Check your Gmail Sent folder.")
+                        else:
+                            st.warning("Pehle recipient ka email address likhein.")
     else:
-        st.info("No leads available. Please run Lead Hunter first.")
+        st.info("Pehle 'Lead Hunter' tab mein leads nikalen.")
