@@ -2,73 +2,80 @@ import streamlit as st
 import pandas as pd
 import requests
 import re
-import json
 import smtplib
 from email.mime.text import MIMEText
 from urllib.parse import urlparse
 
-# --- 1. SETTINGS & BRANDING ---
+# --- 1. SETTINGS ---
 st.set_page_config(page_title="Vantedge Intelligence", layout="wide")
-st.title("Vantedge-OutReach-Intelligence 🚀")
+st.title("Vantedge Direct OutReach 🚀")
 
-# --- 2. THE ENGINE (Specific Leads Fix) ---
-def get_leads_aggressive(niche, city):
+# --- 2. DIRECT CLIENT FILTER ---
+# Directory sites ko nikalne ke liye list
+EXCLUDE_LIST = [
+    'clutch.co', 'semrush.com', 'linkedin.com', 'facebook.com', 
+    'yelp.com', 'upcity.com', 'expertido.com', 'agencyspotter.com',
+    'yellowpages.com', 'crunchbase.com'
+]
+
+def is_direct_client(url):
+    domain = urlparse(url).netloc.lower()
+    return not any(site in domain for site in EXCLUDE_LIST)
+
+def get_direct_leads(niche, city):
     all_results = []
     headers = {'X-API-KEY': st.secrets["SERPER_API_KEY"], 'Content-Type': 'application/json'}
     
-    # Ye 2 alag queries khud banayega taake results zyada ayen
-    queries = [f'"{niche}" in {city} website', f'{niche} contact email {city}']
-    
-    for q in queries:
-        payload = json.dumps({"q": q, "num": 50})
+    # Page 1 se 3 tak scan (Quantity barhane ke liye)
+    for start in [0, 10, 20]:
+        payload = {"q": f'"{niche}" {city} -site:clutch.co', "num": 50, "start": start}
         try:
-            res = requests.post("https://google.serper.dev/search", headers=headers, data=payload).json()
+            res = requests.post("https://google.serper.dev/search", headers=headers, json=payload).json()
             if "organic" in res:
                 all_results.extend(res["organic"])
         except:
             continue
     return all_results
 
-def get_email_fast(url):
+def extract_clean_email(url):
     try:
-        headers = {'User-Agent': 'Mozilla/5.0'}
-        response = requests.get(url, headers=headers, timeout=5)
-        # Deep regex for emails
-        emails = re.findall(r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}', response.text)
-        # Filter junk like .png, .jpg, .webp
-        valid = [e.lower() for e in set(emails) if not any(x in e.lower() for x in ['.png', '.jpg', '.webp', 'sentry.io', 'example'])]
+        r = requests.get(url, headers={'User-Agent': 'Mozilla/5.0'}, timeout=5)
+        emails = re.findall(r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}', r.text)
+        # Kachra extensions nikalna
+        valid = [e.lower() for e in set(emails) if not any(x in e.lower() for x in ['.png', '.jpg', '.webp', 'sentry.io'])]
         return valid[0] if valid else None
     except:
         return None
 
-# --- 3. UI TABS (Wapas Outreach ke saath) ---
-tab1, tab2 = st.tabs(["🔍 Lead Hunter", "📧 AI Outreach"])
+# --- 3. UI TABS ---
+tab1, tab2 = st.tabs(["🔍 Direct Lead Hunter", "📧 Auto Outreach"])
 
 with tab1:
     col1, col2 = st.columns(2)
-    n_in = col1.text_input("Niche", value="Marketing Agency", key="niche")
-    c_in = col2.text_input("City", value="Dubai", key="city")
+    n_in = col1.text_input("Niche", value="Marketing Agency")
+    c_in = col2.text_input("City", value="Dubai")
     
-    if st.button("Start Extraction"):
-        with st.spinner("Hunting leads..."):
-            raw_data = get_leads_aggressive(n_in, c_in)
-            # Remove duplicates
-            unique_links = {item['link']: item for item in raw_data}.values()
+    if st.button("Hunt Direct Clients"):
+        with st.spinner("Filtering out directories and hunting direct clients..."):
+            raw_data = get_direct_leads(n_in, c_in)
+            final_leads = []
+            progress = st.progress(0)
             
-            leads_final = []
-            p = st.progress(0)
-            for i, item in enumerate(unique_links):
-                email = get_email_fast(item['link'])
-                if email:
-                    leads_final.append({"Business": item['title'], "Website": item['link'], "Email": email})
-                p.progress((i + 1) / len(unique_links))
+            for i, item in enumerate(raw_data):
+                link = item['link']
+                # Check agar ye directory site toh nahi
+                if is_direct_client(link):
+                    email = extract_clean_email(link)
+                    if email:
+                        final_leads.append({"Business": item['title'], "Website": link, "Email": email})
+                progress.progress((i + 1) / len(raw_data))
             
-            st.session_state.leads = leads_final
-            if leads_final:
-                st.success(f"Found {len(leads_final)} Leads!")
-                st.table(pd.DataFrame(leads_final))
+            st.session_state.leads = final_leads
+            if final_leads:
+                st.success(f"Found {len(final_leads)} Direct Client Leads!")
+                st.table(pd.DataFrame(final_leads))
             else:
-                st.error("Still no emails? Check your Serper API Key in Secrets.")
+                st.warning("No direct emails found. Try broadening the niche slightly.")
 
 with tab2:
     if 'leads' in st.session_state and st.session_state.leads:
@@ -80,11 +87,11 @@ with tab2:
                     try:
                         server = smtplib.SMTP("smtp.gmail.com", 587)
                         server.starttls()
-                        # App Password use karein yahan
+                        # Yahan App Password lazmi hai
                         server.login(st.secrets["GMAIL_USER"], st.secrets["GMAIL_PASSWORD"])
                         
-                        msg = MIMEText(f"Hi {lead['Business']},\n\nWe found your site {lead['Website']}...")
-                        msg['Subject'] = "Collaboration Request"
+                        msg = MIMEText(f"Hi {lead['Business']},\n\nWe saw your website {lead['Website']} and want to work with you.")
+                        msg['Subject'] = "Collaboration Proposal"
                         msg['From'] = st.secrets["GMAIL_USER"]
                         msg['To'] = lead['Email']
                         
