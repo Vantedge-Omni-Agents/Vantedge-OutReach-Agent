@@ -11,7 +11,7 @@ from groq import Groq
 logo_url = "https://raw.githubusercontent.com/Vantedge-Omni-Agents/Vantedge-OutReach-Agent/main/logo.png"
 
 st.set_page_config(
-    page_title="Vantedge Intelligence", 
+    page_title="Vantedge-OutReach-Agent",
     page_icon=logo_url, 
     layout="wide"
 )
@@ -47,7 +47,7 @@ def send_email(target, subject, message):
         return False
 
 # --- 4. APP UI ---
-st.title("Vantedge Intelligence Pro 🚀")
+st.title("Vantedge-OutReach-Agent🚀")
 
 tab1, tab2 = st.tabs(["Lead Hunter", "AI Outreach"])
 
