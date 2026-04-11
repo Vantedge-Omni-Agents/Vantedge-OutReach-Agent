@@ -10,92 +10,91 @@ DARK_LOGO = "https://raw.githubusercontent.com/Vantedge-Omni-Agents/Vantedge-Out
 st.set_page_config(page_title="Vantedge Bulk Hunter", page_icon=DARK_LOGO, layout="wide")
 
 st.title("Vantedge Bulk Lead Extractor 🚀")
-st.markdown("### Extract 50-100+ Verified Leads in one click")
+st.info("Tip: Search for broad terms like 'Real Estate' or 'Solar' to get 50+ leads.")
 
-# --- 2. THE ULTIMATE SCRAPER ENGINE ---
-def get_verified_email(website_url):
+# --- 2. LEAD EXTRACTION ENGINE ---
+def extract_email_from_site(url):
     try:
-        parsed_url = urlparse(website_url)
-        domain = parsed_url.netloc.replace('www.', '')
+        headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
+        response = requests.get(url, headers=headers, timeout=5)
         
-        headers = {'User-Agent': 'Mozilla/5.0'}
-        # Quick timeout taake bulk processing fast ho
-        response = requests.get(website_url, headers=headers, timeout=5)
+        # Regex for capturing emails
+        emails = re.findall(r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}', response.text)
         
-        # Professional Email Regex
-        raw_emails = re.findall(r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}', response.text)
-        blacklist = ['.webp', '.png', '.jpg', '.jpeg', '.gif', 'sentry.io', 'example.com']
+        # Filter junk extensions
+        blacklist = ['.webp', '.png', '.jpg', '.jpeg', '.gif', 'sentry.io']
+        clean_emails = [e for e in set(emails) if not any(x in e.lower() for x in blacklist)]
         
-        valid_emails = []
-        for email in set(raw_emails):
-            email = email.lower()
-            # Priority: Domain Match (e.g. info@company.com)
-            if domain in email and not any(word in email for word in blacklist):
-                valid_emails.append(email)
-        
-        if not valid_emails:
-            for email in set(raw_emails):
-                if ('gmail' in email or 'outlook' in email) and not any(word in email for word in blacklist):
-                    valid_emails.append(email)
-
-        return valid_emails[0] if valid_emails else None
+        if clean_emails:
+            # Domain matching priority
+            domain = urlparse(url).netloc.replace('www.', '')
+            for e in clean_emails:
+                if domain in e.lower():
+                    return e.lower()
+            return clean_emails[0] # Fallback to first available email
+        return None
     except:
         return None
 
-# --- 3. SERPER BULK FETCHING ---
-def fetch_bulk_leads(niche, city, max_results=100):
-    search_url = "https://google.serper.dev/search"
-    headers = {'X-API-KEY': st.secrets["SERPER_API_KEY"], 'Content-Type': 'application/json'}
+# --- 3. BULK SEARCH LOGIC ---
+def get_bulk_results(niche, city):
+    all_results = []
+    # Hum 2 alag queries bhejenge taake double data milay
+    queries = [
+        f'"{niche}" in {city} website',
+        f'{niche} company contact email {city}'
+    ]
     
-    # Hum 100 results mangwa rahe hain (Max limit)
-    payload = json.dumps({
-        "q": f'"{niche}" companies in {city} -site:clutch.co -site:linkedin.com',
-        "num": max_results 
-    })
-    
-    response = requests.post(search_url, headers=headers, data=payload).json()
-    return response.get('organic', [])
+    for q in queries:
+        payload = json.dumps({
+            "q": q,
+            "num": 50 # Per query 50 results mangwa rahay hain
+        })
+        headers = {'X-API-KEY': st.secrets["SERPER_API_KEY"], 'Content-Type': 'application/json'}
+        res = requests.post("https://google.serper.dev/search", headers=headers, data=payload).json()
+        if "organic" in res:
+            all_results.extend(res["organic"])
+            
+    return all_results
 
-# --- 4. MAIN APP LOGIC ---
+# --- 4. APP INTERFACE ---
 c1, c2 = st.columns(2)
-target_niche = c1.text_input("Niche", placeholder="e.g. Solar Installers")
-target_city = c2.text_input("City", placeholder="e.g. Dubai")
+niche_input = c1.text_input("Target Niche", placeholder="e.g. Marketing Agency")
+city_input = c2.text_input("Target City", placeholder="e.g. United States")
 
-if st.button("Start Bulk Hunting"):
-    if target_niche and target_city:
-        results = fetch_bulk_leads(target_niche, target_city)
-        total_found = len(results)
+if st.button("Start Extreme Extraction"):
+    if niche_input and city_input:
+        raw_data = get_bulk_results(niche_input, city_input)
         
-        leads_data = []
-        progress_text = "Scanning websites for verified emails..."
-        progress_bar = st.progress(0, text=progress_text)
+        # Removing duplicates from search results
+        unique_results = {res['link']: res for res in raw_data}.values()
         
-        # Fix for the SyntaxError you encountered
-        for i, result in enumerate(results):
-            url = result.get('link', '')
-            email = get_verified_email(url)
+        final_leads = []
+        progress_bar = st.progress(0, text="Searching and verifying emails...")
+        
+        for index, item in enumerate(unique_results):
+            link = item.get('link', '')
+            email = extract_email_from_site(link)
             
             if email:
-                leads_data.append({
-                    "Company": result.get('title'),
-                    "Website": url,
+                final_leads.append({
+                    "Business Name": item.get('title'),
+                    "Website": link,
                     "Email": email
                 })
             
-            # Progress update
-            progress_bar.progress((i + 1) / total_found)
+            # Update progress
+            progress_bar.progress((index + 1) / len(unique_results))
             
-        st.session_state.leads = leads_data
-        
-        if leads_data:
-            st.success(f"Successfully found {len(leads_data)} verified leads from {total_found} websites!")
-            df = pd.DataFrame(leads_data)
+        if final_leads:
+            st.success(f"Found {len(final_leads)} Verified Leads!")
+            df = pd.DataFrame(final_leads)
             st.dataframe(df, use_container_width=True)
             
-            # Download Button for Bulk Data
+            # Export to CSV
             csv = df.to_csv(index=False).encode('utf-8')
-            st.download_button("Download All Leads (CSV)", csv, "vantedge_leads.csv", "text/csv")
+            st.download_button("Download Leads CSV", csv, "bulk_leads.csv", "text/csv")
         else:
-            st.warning("No business emails found. Try broadening your niche.")
+            st.warning("No emails found. Try a broader search term.")
     else:
-        st.error("Please enter both Niche and City.")
+        st.error("Please fill both fields.")
