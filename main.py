@@ -6,98 +6,72 @@ import smtplib
 from email.mime.text import MIMEText
 from groq import Groq
 
-# --- 1. SETUP & SECRETS ---
-st.set_page_config(page_title="Vantedge-OutReach-Agent", layout="wide", page_icon="🚀")
+# --- 1. TASKBAR & LOGO SETUP ---
+# Ye code browser ke tab (taskbar) mein logo aur naam set karta hai
+logo_url = "https://raw.githubusercontent.com/Vantedge-Omni-Agents/Vantedge-OutReach-Agent/main/logo.png"
 
+st.set_page_config(
+    page_title="Vantedge Intelligence", 
+    page_icon=logo_url, 
+    layout="wide"
+)
+
+# Sidebar mein logo aur title
+st.sidebar.image(logo_url, width=150)
+st.sidebar.title("Vantedge Control")
+
+# --- 2. API & GMAIL SECRETS ---
 try:
-    GROQ_API_KEY = st.secrets["GROQ_API_KEY"]
-    SERPER_API_KEY = st.secrets["SERPER_API_KEY"]
-    GMAIL_USER = st.secrets["GMAIL_USER"]
-    GMAIL_PASSWORD = st.secrets["GMAIL_PASSWORD"]
+    GROQ_KEY = st.secrets["GROQ_API_KEY"]
+    SERPER_KEY = st.secrets["SERPER_API_KEY"]
+    MY_EMAIL = st.secrets["GMAIL_USER"]
+    MY_PASS = st.secrets["GMAIL_PASSWORD"]
 except Exception as e:
-    st.error("⚠️ API Keys or Gmail Secrets are missing! Please check Streamlit settings.")
+    st.error("Please add API keys and Gmail secrets in Streamlit settings.")
     st.stop()
 
-client_groq = Groq(api_key=GROQ_API_KEY)
+client = Groq(api_key=GROQ_KEY)
 
-# --- 2. CORE FUNCTIONS ---
-
-def send_gmail_outreach(to_email, subject, body):
-    """Seedha aapke Gmail account se email bhejta hai"""
-    msg = MIMEText(body)
+# --- 3. HELPER FUNCTIONS ---
+def send_email(target, subject, message):
+    msg = MIMEText(message)
     msg['Subject'] = subject
-    msg['From'] = f"Salman (Vantedge) <{GMAIL_USER}>"
-    msg['To'] = to_email
-
+    msg['From'] = f"Vantedge AI <{MY_EMAIL}>"
+    msg['To'] = target
     try:
         with smtplib.SMTP_SSL('smtp.gmail.com', 465) as server:
-            server.login(GMAIL_USER, GMAIL_PASSWORD)
-            server.sendmail(GMAIL_USER, to_email, msg.as_string())
+            server.login(MY_EMAIL, MY_PASS)
+            server.sendmail(MY_EMAIL, target, msg.as_string())
         return True
-    except Exception as e:
-        st.error(f"Gmail Send Error: {e}")
+    except:
         return False
 
-def get_leads(niche, location):
-    """High-quality leads fetch karne ke liye"""
-    url = "https://google.serper.dev/search"
-    query = f"{niche} companies in {location} contact email"
-    payload = json.dumps({"q": query, "num": 10})
-    headers = {'X-API-KEY': SERPER_API_KEY, 'Content-Type': 'application/json'}
-    
-    res = requests.post(url, headers=headers, data=payload).json()
-    return res.get("organic", [])
+# --- 4. APP UI ---
+st.title("Vantedge Intelligence Pro 🚀")
 
-def generate_pitch(target, context):
-    """Groq AI se personalized message generate karna"""
-    model = "llama-3.3-70b-versatile"
-    prompt = f"Write a professional 2-line intro email to {target}. Pitch Horbex Digital's marketing services. Context: {context}"
-    
-    try:
-        chat = client_groq.chat.completions.create(
-            messages=[{"role": "user", "content": prompt}],
-            model=model
-        )
-        return chat.choices[0].message.content
-    except Exception as e:
-        return f"AI Error: {e}"
-
-# --- 3. MAIN UI ---
-st.title("Vantedge-OutReach-Agent 🚀")
-st.caption("Direct Gmail Integration | AI-Driven Outreach")
-
-tab1, tab2 = st.tabs(["🔍 Lead Hunter", "📧 AI Outreach"])
+tab1, tab2 = st.tabs(["Lead Hunter", "AI Outreach"])
 
 with tab1:
-    c1, c2 = st.columns(2)
-    niche = c1.text_input("Business Niche")
-    loc = c2.text_input("Location")
+    niche = st.text_input("Niche (e.g. Tech)")
+    city = st.text_input("City (e.g. Karachi)")
     
-    if st.button("Start Extraction"):
-        with st.spinner("Finding leads..."):
-            leads = get_leads(niche, loc)
-            st.session_state.leads = leads
-            st.success(f"Found {len(leads)} leads!")
-            st.table(pd.DataFrame(leads)[['title', 'link']])
+    if st.button("Find Leads"):
+        query = f"{niche} companies in {city} email"
+        url = "https://google.serper.dev/search"
+        headers = {'X-API-KEY': SERPER_KEY, 'Content-Type': 'application/json'}
+        data = json.dumps({"q": query, "num": 10})
+        
+        res = requests.post(url, headers=headers, data=data).json()
+        if "organic" in res:
+            st.session_state.data = res["organic"]
+            st.table(pd.DataFrame(res["organic"])[['title', 'link']])
 
 with tab2:
-    if 'leads' in st.session_state:
-        for i, lead in enumerate(st.session_state.leads):
-            with st.expander(f"Lead: {lead['title']}"):
-                # Manual Email Input (kyunke Serper hamesha email nahi deta)
-                target_email = st.text_input(f"Recipient Email for {lead['title']}", key=f"email_{i}")
-                
-                if st.button(f"Draft AI Pitch", key=f"draft_{i}"):
-                    pitch = generate_pitch(lead['title'], lead.get('snippet', ''))
-                    st.session_state[f"p_{i}"] = pitch
-                    st.info(pitch)
-                
-                if f"p_{i}" in st.session_state:
-                    if st.button(f"Send via My Gmail", key=f"send_{i}"):
-                        if target_email:
-                            if send_gmail_outreach(target_email, "Business Collaboration", st.session_state[f"p_{i}"]):
-                                st.success("🚀 Email sent! Check your Gmail Sent folder.")
-                        else:
-                            st.warning("Pehle recipient ka email address likhein.")
-    else:
-        st.info("Fetch leads first in the Lead Hunter Tab!")
+    if 'data' in st.session_state:
+        for i, item in enumerate(st.session_state.data):
+            with st.expander(f"Lead: {item['title']}"):
+                email_addr = st.text_input("Email", key=f"e{i}")
+                if st.button("Generate & Send", key=f"b{i}"):
+                    # AI Pitch Generation
+                    prompt = f"Write a 2-line business email to {item['title']}. Use: {item.get('snippet','')}"
+                    chat
