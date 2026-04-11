@@ -18,7 +18,7 @@ if "GROQ_API_KEY" not in st.secrets or "SERPER_API_KEY" not in st.secrets:
 
 client = Groq(api_key=st.secrets["GROQ_API_KEY"])
 
-# --- 2. EMAIL EXTRACTOR ---
+# --- 2. ENGINES ---
 def extract_emails(url):
     try:
         response = requests.get(url, headers={'User-Agent': 'Mozilla/5.0'}, timeout=8)
@@ -37,15 +37,16 @@ with tab1:
     city = c2.text_input("City", "London")
     
     if st.button("Hunt Verified Leads"):
-        with st.spinner("Hunting leads..."):
+        with st.spinner("Vantedge-Pro is hunting..."):
             headers = {'X-API-KEY': st.secrets["SERPER_API_KEY"], 'Content-Type': 'application/json'}
             query = f'"{niche}" {city} website "email"'
-            res = requests.post("https://google.serper.dev/search", headers=headers, json={"q": query, "num": 20}).json()
+            res = requests.post("https://google.serper.dev/search", headers=headers, json={"q": query, "num": 25}).json()
             
             leads = []
             for item in res.get("organic", []):
                 email = extract_emails(item['link'])
                 if email:
+                    # KEY FIX: Using 'Business' consistently
                     leads.append({"Business": item['title'], "Website": item['link'], "Email": email})
             
             st.session_state.leads_data = leads
@@ -53,36 +54,44 @@ with tab1:
                 st.success(f"Found {len(leads)} Leads!")
                 st.table(pd.DataFrame(leads))
             else:
-                st.warning("No emails found. Try a different city.")
+                st.warning("No direct emails found. Try 'New York' or 'London'.")
 
 with tab2:
     if 'leads_data' in st.session_state and st.session_state.leads_data:
-        my_offer = st.text_area("Your Offer", "I provide AI lead generation services.")
+        my_offer = st.text_area("Your Business Offer", "I provide high-quality lead generation and AI automation.")
         
         for i, lead in enumerate(st.session_state.leads_data):
+            # KEY FIX: Column names match now
             with st.expander(f"Pitch for: {lead['Business']}"):
                 
-                # FIXED BUTTON LOGIC
-                if st.button(f"Generate Pitch", key=f"gen_{i}"):
+                if st.button(f"Generate AI Pitch", key=f"gen_{i}"):
                     try:
-                        with st.spinner("AI is crafting your email..."):
-                            # Using llama-3.1 model to avoid decommissioning error
-                            prompt = f"Write a 2-sentence cold email to {lead['Business']} offering {my_offer}."
+                        with st.spinner("AI is crafting..."):
+                            # Using stable llama-3.1 model
+                            prompt = f"Write a 2-sentence professional cold email to {lead['Business']} offering {my_offer}."
                             ai_resp = client.chat.completions.create(
                                 messages=[{"role": "user", "content": prompt}],
                                 model="llama-3.1-8b-instant"
                             )
-                            # Saving to session state
                             st.session_state[f"pitch_{i}"] = ai_resp.choices[0].message.content
-                            st.rerun() # THIS REFRESHES THE PAGE TO SHOW THE TEXT
+                            st.rerun()
                     except Exception as e:
                         st.error(f"AI Error: {e}")
 
-                # This text area will now show the generated pitch
-                final_pitch = st.text_area("Final Draft:", value=st.session_state.get(f"pitch_{i}", ""), height=150, key=f"edit_{i}")
+                final_pitch = st.text_area("Email Draft:", value=st.session_state.get(f"pitch_{i}", ""), height=150, key=f"edit_{i}")
                 
                 if st.button(f"Send Email", key=f"send_{i}"):
-                    # Email sending logic here...
-                    st.success("Email Sent Successfully! 🚀")
+                    try:
+                        context = ssl.create_default_context()
+                        with smtplib.SMTP_SSL("smtp.gmail.com", 465, context=context) as server:
+                            server.login(st.secrets["GMAIL_USER"], st.secrets["GMAIL_PASSWORD"])
+                            msg = MIMEText(final_pitch)
+                            msg['Subject'] = f"Proposal for {lead['Business']}"
+                            msg['From'] = st.secrets["GMAIL_USER"]
+                            msg['To'] = lead['Email']
+                            server.send_message(msg)
+                        st.success("Sent Successfully! 🚀")
+                    except Exception as e:
+                        st.error(f"Gmail Login Error: {e}")
     else:
-        st.info("Please hunt for leads first.")
+        st.info("Pehle 'Lead Hunter' tab mein leads dhoondein.")
