@@ -6,99 +6,112 @@ import smtplib
 from email.mime.text import MIMEText
 from groq import Groq
 
-# --- 1. TASKBAR & DYNAMIC LOGO SETUP ---
-# GitHub ke 'Raw' links aapki specific repository se
-# Note: GitHub links mein space ki jagah '%20' use hota hai
-DARK_THEME_LOGO = "https://raw.githubusercontent.com/Vantedge-Omni-Agents/Vantedge-OutReach-Agent/main/logo.png" # White icon for dark bg
-LIGHT_THEME_LOGO = "https://raw.githubusercontent.com/Vantedge-Omni-Agents/Vantedge-OutReach-Agent/main/black%20logo.png" # Black icon for light bg
+# --- 1. CONFIG & LOGO LINKS ---
+# GitHub ke 'Raw' links
+DARK_THEME_LOGO = "https://raw.githubusercontent.com/Vantedge-Omni-Agents/Vantedge-OutReach-Agent/main/logo.png"
+LIGHT_THEME_LOGO = "https://raw.githubusercontent.com/Vantedge-Omni-Agents/Vantedge-OutReach-Agent/main/black%20logo.png"
 
-# Browser Tab Configuration (Taskbar)
+# Taskbar Setup (Sabse upar hona lazmi hai)
 st.set_page_config(
     page_title="Vantedge-OutReach-Agent",
-    page_icon=DARK_THEME_LOGO, # Browser tab icon
+    page_icon=DARK_THEME_LOGO,
     layout="wide"
 )
 
-# Theme based logic for Sidebar Logo
-try:
-    # Streamlit theme check
-    if st.get_option("theme.base") == "dark":
-        logo_url = DARK_THEME_LOGO
-    else:
-        logo_url = LIGHT_THEME_LOGO
-except:
-    logo_url = DARK_THEME_LOGO # Safe fallback
+# --- 2. 100% DYNAMIC CSS LOGO ---
+# Ye browser theme switch hote hi logo badal dega
+st.markdown(
+    f"""
+    <style>
+    [data-testid="stSidebarNav"]::before {{
+        content: "";
+        display: block;
+        background-image: url("{DARK_THEME_LOGO}");
+        background-size: contain;
+        background-repeat: no-repeat;
+        height: 80px;
+        width: 120px;
+        margin: 20px auto;
+    }}
+    @media (prefers-color-scheme: light) {{
+        [data-testid="stSidebarNav"]::before {{
+            background-image: url("{LIGHT_THEME_LOGO}");
+        }}
+    }}
+    </style>
+    """,
+    unsafe_allow_html=True
+)
 
-# Sidebar Branding
-st.sidebar.image(logo_url, use_container_width=True)
-st.sidebar.title("Vantedge-OutReach-Beta")
+st.sidebar.title("Vantedge Control")
 
-# --- 2. SECRETS & CLIENTS ---
+# --- 3. API SECRETS HANDLING (FIXING THE ERROR) ---
 try:
-    GROQ_API = st.secrets["GROQ_API_KEY"]
-    SERPER_API = st.secrets["SERPER_API_KEY"]
+    # Hum variables ko direct load kar rahe hain taake NameError na aaye
+    SERPER_KEY = st.secrets["SERPER_API_KEY"]
+    GROQ_KEY = st.secrets["GROQ_API_KEY"]
     GMAIL_USER = st.secrets["GMAIL_USER"]
     GMAIL_PASS = st.secrets["GMAIL_PASSWORD"]
 except Exception as e:
-    st.error("Missing Secrets! Please check Streamlit Cloud Dashboard.")
+    st.error(f"⚠️ Secrets Error: {e}. Please check your Streamlit Cloud Secrets.")
     st.stop()
 
-client_groq = Groq(api_key=GROQ_API)
+client_groq = Groq(api_key=GROQ_KEY)
 
-# --- 3. EMAIL LOGIC ---
-def send_gmail(to_email, subject, body):
+# --- 4. CORE FUNCTIONS ---
+def send_email(target, subject, body):
     msg = MIMEText(body)
     msg['Subject'] = subject
     msg['From'] = f"Vantedge Agent <{GMAIL_USER}>"
-    msg['To'] = to_email
+    msg['To'] = target
     try:
         with smtplib.SMTP_SSL('smtp.gmail.com', 465) as server:
             server.login(GMAIL_USER, GMAIL_PASS)
-            server.sendmail(GMAIL_USER, to_email, msg.as_string())
+            server.sendmail(GMAIL_USER, target, msg.as_string())
         return True
     except Exception as e:
         st.error(f"Gmail Error: {e}")
         return False
 
-# --- 4. APP INTERFACE ---
+# --- 5. MAIN UI ---
 st.title("Vantedge-OutReach-Intelligence 🚀")
-
 tabs = st.tabs(["Lead Hunter", "AI Outreach"])
 
 with tabs[0]:
     c1, c2 = st.columns(2)
-    niche = c1.text_input("Target Niche", placeholder="e.g. Solar Companies")
-    city = c2.text_input("Target City", placeholder="e.g. Dubai")
+    niche = c1.text_input("Target Niche")
+    city = c2.text_input("Target City")
     
     if st.button("Start Extraction"):
-        with st.spinner("Finding leads..."):
-            query = f"{niche} in {city} contact email"
+        with st.spinner("Searching..."):
             url = "https://google.serper.dev/search"
-            headers = {'X-API-KEY': SERPER_API_KEY, 'Content-Type': 'application/json'}
-            res = requests.post(url, headers=headers, data=json.dumps({"q": query})).json()
+            headers = {
+                'X-API-KEY': SERPER_KEY, # FIX: Yahan ab error nahi aayega
+                'Content-Type': 'application/json'
+            }
+            query = f"{niche} in {city} contact email"
+            payload = json.dumps({"q": query, "num": 10})
             
-            if "organic" in res:
-                st.session_state.leads = res["organic"]
-                st.success(f"Extracted {len(res['organic'])} leads!")
-                st.table(pd.DataFrame(res["organic"])[['title', 'link']])
+            response = requests.post(url, headers=headers, data=payload).json()
+            if "organic" in response:
+                st.session_state.leads = response["organic"]
+                st.table(pd.DataFrame(response["organic"])[['title', 'link']])
+            else:
+                st.error("No leads found. Check API quota.")
 
 with tabs[1]:
     if 'leads' in st.session_state:
         for i, lead in enumerate(st.session_state.leads):
             with st.expander(f"Lead: {lead['title']}"):
-                target = st.text_input("Email Address", key=f"target_{i}")
+                email = st.text_input("Email", key=f"mail_{i}")
                 if st.button("Send AI Pitch", key=f"btn_{i}"):
-                    # AI Contextual Pitch
-                    prompt = f"Write a professional 2-line intro to {lead['title']}. Use context: {lead.get('snippet','')}"
+                    prompt = f"Write a 2-line intro to {lead['title']}. Context: {lead.get('snippet','')}"
                     chat = client_groq.chat.completions.create(
                         messages=[{"role": "user", "content": prompt}],
                         model="llama-3.3-70b-versatile"
                     )
                     pitch = chat.choices[0].message.content
-                    
-                    if target and send_gmail(target, "Partnership Opportunity", pitch):
-                        st.success(f"Pitch sent to {target}!")
-                        st.info(pitch)
+                    if email and send_email(email, "Collaboration Inquiry", pitch):
+                        st.success("✅ Sent!")
     else:
-        st.info("No leads found yet. Use Lead Hunter first.")
-    
+        st.info("Pehle leads nikalen.")
