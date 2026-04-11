@@ -7,49 +7,50 @@ import ssl
 from email.mime.text import MIMEText
 from groq import Groq
 
-# --- 1. SETTINGS ---
-st.set_page_config(page_title="Vantedge Pro", layout="wide")
+# --- 1. CONFIG & UI ---
+st.set_page_config(page_title="Vantedge Pro Intelligence", layout="wide")
 st.title("Vantedge Pro: Hunter & AI Pitcher 🚀")
 
-# --- 2. API KEYS & CLIENT ---
-# Check if keys exist to prevent crash
+# API Keys Check from Secrets
 if "GROQ_API_KEY" not in st.secrets or "SERPER_API_KEY" not in st.secrets:
-    st.error("Secrets missing! Manage App -> Secrets mein keys check karein.")
+    st.error("API Keys missing hain! Manage App -> Secrets mein check karein.")
     st.stop()
 
 client = Groq(api_key=st.secrets["GROQ_API_KEY"])
 
-# --- 3. THE SEARCH ENGINE ---
+# --- 2. THE SEARCH & SCRAPE ENGINE ---
 def scrape_email(url):
     try:
-        r = requests.get(url, headers={'User-Agent': 'Mozilla/5.0'}, timeout=5)
+        r = requests.get(url, headers={'User-Agent': 'Mozilla/5.0'}, timeout=7)
+        # Deep Regex for finding emails
         emails = re.findall(r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}', r.text)
-        # Deep filter for junk
-        valid = [e.lower() for e in set(emails) if not any(x in e.lower() for x in ['png', 'jpg', 'wix', 'sentry', 'example'])]
+        # Junk filter (Removing images/wix trash)
+        valid = [e.lower() for e in set(emails) if not any(x in e.lower() for x in ['png', 'jpg', 'wix', 'sentry', 'gif', 'jpeg'])]
         return valid[0] if valid else None
     except:
         return None
 
-# --- 4. TABS ---
-tab1, tab2 = st.tabs(["🔍 Smart Hunter", "✉️ AI Pitcher"])
+# --- 3. UI TABS ---
+tab1, tab2 = st.tabs(["🔍 Smart Lead Hunter", "✉️ AI Outreach Control"])
 
 with tab1:
     c1, c2 = st.columns(2)
-    target_niche = c1.text_input("Niche", "Marketing Agency")
-    target_city = c2.text_input("City", "Dubai")
+    niche = c1.text_input("Target Niche (e.g., Dental Clinic)", "Roofing Contractors")
+    city = c2.text_input("Target City", "Miami")
     
     if st.button("Hunt Verified Leads"):
-        with st.spinner("Finding direct business owners..."):
+        with st.spinner("Searching deep for direct emails..."):
             headers = {'X-API-KEY': st.secrets["SERPER_API_KEY"], 'Content-Type': 'application/json'}
-            # High-intent query to get real websites
-            payload = {"q": f'"{target_niche}" {target_city} contact email -site:clutch.co -site:yelp.com', "num": 30}
+            # POWERFUL SEARCH QUERY: Specifically targets contact/email pages
+            search_query = f'"{niche}" {city} "email" OR "contact us" website -site:clutch.co -site:yelp.com -site:facebook.com'
+            payload = {"q": search_query, "num": 50}
             
             try:
                 res = requests.post("https://google.serper.dev/search", headers=headers, json=payload).json()
                 results = res.get("organic", [])
                 
                 leads = []
-                seen_links = set() # NO DUPLICATES
+                seen_links = set() # ANTI-DUPLICATION
                 
                 p_bar = st.progress(0)
                 for i, item in enumerate(results):
@@ -63,47 +64,29 @@ with tab1:
                 
                 st.session_state.leads = leads
                 if leads:
-                    st.success(f"Found {len(leads)} Unique Verified Leads!")
+                    st.success(f"Mubarak ho! {len(leads)} Unique Leads mil gayi hain!")
                     st.table(pd.DataFrame(leads))
                 else:
-                    st.warning("No emails found. Try a slightly broader city name.")
+                    st.warning("Abhi koi email nahi mila. Niche change karke 'Plumbers' ya 'Lawyers' try karein.")
             except Exception as e:
                 st.error(f"Search Error: {e}")
 
 with tab2:
     if 'leads' in st.session_state and st.session_state.leads:
-        my_offer = st.text_area("Your Offer", "I provide AI-powered lead generation to grow your business.")
+        offer = st.text_area("Your Service Offer", "I will provide high-quality B2B leads and AI automation for your business.")
         
         for i, lead in enumerate(st.session_state.leads):
-            with st.expander(f"Pitch for: {lead['Business']}"):
-                # --- FIXED GROQ CALL (LATEST MODEL) ---
-                if st.button(f"Generate Pitch", key=f"g_{i}"):
+            with st.expander(f"Pitch: {lead['Business']}"):
+                # FIXED MODEL: Using llama-3.1-8b-instant to avoid Decommissioned Error
+                if st.button(f"Generate AI Pitch", key=f"g_{i}"):
                     try:
-                        prompt = f"Write a professional 2-sentence cold email to {lead['Business']} offering {my_offer}. Website: {lead['Website']}"
-                        # Using llama-3.1-8b-instant which is currently active and fast
+                        prompt = f"Write a professional 2-sentence cold email to {lead['Business']} offering {offer}. Website: {lead['Website']}"
                         resp = client.chat.completions.create(
                             messages=[{"role":"user","content":prompt}], 
                             model="llama-3.1-8b-instant" 
                         )
                         st.session_state[f"msg_{i}"] = resp.choices[0].message.content
                     except Exception as e:
-                        st.error(f"AI Error: {e}")
+                        st.error(f"Groq AI Error: {e}")
 
-                final_text = st.text_area("Edit & Send:", value=st.session_state.get(f"msg_{i}", ""), height=150, key=f"e_{i}")
-                
-                # --- FIXED GMAIL SENDING ---
-                if st.button(f"Send to {lead['Email']}", key=f"s_{i}"):
-                    try:
-                        context = ssl.create_default_context()
-                        with smtplib.SMTP_SSL("smtp.gmail.com", 465, context=context) as server:
-                            server.login(st.secrets["GMAIL_USER"], st.secrets["GMAIL_PASSWORD"])
-                            msg = MIMEText(final_text)
-                            msg['Subject'] = f"Quick Question for {lead['Business']}"
-                            msg['From'] = st.secrets["GMAIL_USER"]
-                            msg['To'] = lead['Email']
-                            server.send_message(msg)
-                        st.success("Sent Successfully! 🚀")
-                    except Exception as e:
-                        st.error(f"Gmail Error: {e}. Check App Password!")
-    else:
-        st.info("Pehle leads nikalain.")
+                final_text = st.text_area("Final Email:", value=st.session_state.get(f
