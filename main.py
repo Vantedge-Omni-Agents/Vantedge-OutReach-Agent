@@ -5,98 +5,102 @@ import re
 import smtplib
 from email.mime.text import MIMEText
 from groq import Groq
-from urllib.parse import urlparse
 
-# --- 1. BRANDING & SETUP ---
-st.set_page_config(page_title="Vantedge God-Mode", layout="wide")
-st.title("Vantedge Pro: Smart Hunter & AI Pitcher 🚀")
+# --- 1. SETUP ---
+st.set_page_config(page_title="Vantedge Pro", layout="wide")
+st.title("Vantedge Pro: Hunter & AI Pitcher 🚀")
 
-# Groq AI Setup
-client = Groq(api_key=st.secrets["GROQ_API_KEY"])
+# Groq Setup
+try:
+    client = Groq(api_key=st.secrets["GROQ_API_KEY"])
+except Exception as e:
+    st.error("Groq API Key missing in Secrets!")
 
-# --- 2. DEEP EMAIL SCRAPER ---
-def deep_scrape_email(url):
+# --- 2. THE ENGINE (No Duplicates & Deep Search) ---
+def get_verified_leads(niche, city):
+    headers = {'X-API-KEY': st.secrets["SERPER_API_KEY"], 'Content-Type': 'application/json'}
+    all_results = []
+    
+    # 2 Pages for more quantity
+    for start in [0, 10]:
+        payload = {"q": f'"{niche}" {city} website', "num": 50, "start": start}
+        try:
+            res = requests.post("https://google.serper.dev/search", headers=headers, json=payload).json()
+            if "organic" in res:
+                all_results.extend(res["organic"])
+        except:
+            continue
+    return all_results
+
+def extract_email(url):
     try:
-        headers = {'User-Agent': 'Mozilla/5.0'}
-        # Home Page scan
-        r = requests.get(url, headers=headers, timeout=8)
-        text = r.text
-        
-        # Agar home page pe email na mile, toh common pages dhoondo
-        if not re.search(r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}', text):
-            # Contact/About pages dhoondo
-            sub_pages = re.findall(r'href=[\'"]?([^\'" >]+(?:contact|about|info)[^\'" >]*)[\'"]?', text, re.I)
-            for sub in sub_pages[:2]: # Sirf pehle 2 sub-pages scan karein
-                if not sub.startswith('http'):
-                    base = urlparse(url).netloc
-                    sub = f"https://{base}/{sub.lstrip('/')}"
-                r_sub = requests.get(sub, headers=headers, timeout=5)
-                text += r_sub.text
-
-        emails = re.findall(r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}', text)
-        valid = [e.lower() for e in set(emails) if not any(x in e.lower() for x in ['.png', '.jpg', 'sentry', 'wix'])]
+        r = requests.get(url, headers={'User-Agent': 'Mozilla/5.0'}, timeout=7)
+        emails = re.findall(r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}', r.text)
+        # Filter junk
+        valid = [e.lower() for e in set(emails) if not any(x in e.lower() for x in ['png', 'jpg', 'wix', 'sentry'])]
         return valid[0] if valid else None
     except:
         return None
 
-# --- 3. UI TABS ---
-tab1, tab2 = st.tabs(["🔍 Aggressive Hunter", "✉️ AI Pitcher"])
+# --- 3. INTERFACE ---
+tab1, tab2 = st.tabs(["🔍 Hunter", "✉️ AI Pitcher"])
 
 with tab1:
-    col1, col2 = st.columns(2)
-    n_in = col1.text_input("Niche", value="Real Estate Agency")
-    c_in = col2.text_input("City", value="Karachi")
+    c1, c2 = st.columns(2)
+    target_niche = c1.text_input("Niche", "Real Estate Agency")
+    target_city = c2.text_input("City", "Dubai")
     
-    if st.button("Start Aggressive Hunt"):
-        with st.spinner("Hunting for unique direct leads..."):
-            headers = {'X-API-KEY': st.secrets["SERPER_API_KEY"], 'Content-Type': 'application/json'}
-            # Google se 100 results mangwayein
-            payload = {"q": f'"{n_in}" {c_in} website -site:clutch.co -site:linkedin.com', "num": 100}
-            res = requests.post("https://google.serper.dev/search", headers=headers, json=payload).json()
-            
+    if st.button("Hunt Unique Leads"):
+        with st.spinner("Hunting..."):
+            raw_data = get_verified_leads(target_niche, target_city)
             leads = []
-            seen_links = set() # Anti-duplication logic
-            p_bar = st.progress(0)
+            seen_links = set() # ANTI-DUPLICATION
             
-            if "organic" in res:
-                for i, item in enumerate(res["organic"]):
-                    link = item['link']
-                    if link not in seen_links:
-                        email = deep_scrape_email(link)
-                        if email:
-                            leads.append({"Business": item['title'], "Website": link, "Email": email})
-                            seen_links.add(link)
-                    p_bar.progress((i + 1) / len(res["organic"]))
+            p_bar = st.progress(0)
+            for i, item in enumerate(raw_data):
+                link = item['link']
+                if link not in seen_links and not any(x in link for x in ['clutch.co', 'linkedin.com']):
+                    email = extract_email(link)
+                    if email:
+                        leads.append({"Business": item['title'], "Website": link, "Email": email})
+                        seen_links.add(link)
+                p_bar.progress((i + 1) / len(raw_data))
             
             st.session_state.leads = leads
             if leads:
                 st.success(f"Found {len(leads)} Unique Leads!")
                 st.table(pd.DataFrame(leads))
             else:
-                st.error("No emails found. Try a different city or broaden your niche.")
+                st.warning("No direct emails found. Try a different city.")
 
 with tab2:
     if 'leads' in st.session_state and st.session_state.leads:
-        user_prompt = st.text_area("AI Pitch Instructions", placeholder="e.g. Tell them I can help them get 10x more leads through SEO.")
+        selling_point = st.text_area("What are you selling?", "SEO services to rank #1")
         
         for i, lead in enumerate(st.session_state.leads):
             with st.expander(f"Pitch: {lead['Business']}"):
-                if st.button(f"Draft AI Pitch", key=f"gen_{i}"):
-                    full_prompt = f"Write a short, professional cold email to {lead['Business']} about {user_prompt}. Website: {lead['Website']}."
-                    completion = client.chat.completions.create(
-                        messages=[{"role": "user", "content": full_prompt}],
-                        model="llama3-8b-8192",
-                    )
-                    st.session_state[f"text_{i}"] = completion.choices[0].message.content
+                # AI generation
+                if st.button(f"Generate Pitch", key=f"g_{i}"):
+                    prompt = f"Write a short cold email to {lead['Business']} selling {selling_point}. Site: {lead['Website']}"
+                    resp = client.chat.completions.create(messages=[{"role":"user","content":prompt}], model="llama3-8b-8192")
+                    st.session_state[f"txt_{i}"] = resp.choices[0].message.content
                 
-                # Editable Pitch
-                edited_pitch = st.text_area("Edit Pitch:", value=st.session_state.get(f"text_{i}", ""), height=200, key=f"edit_{i}")
+                # EDITABLE BOX
+                final_text = st.text_area("Edit & Send:", value=st.session_state.get(f"txt_{i}", ""), height=150, key=f"e_{i}")
                 
-                if st.button(f"Send to {lead['Email']}", key=f"send_{i}"):
+                if st.button(f"Send to {lead['Email']}", key=f"s_{i}"):
                     try:
                         server = smtplib.SMTP("smtp.gmail.com", 587)
                         server.starttls()
                         server.login(st.secrets["GMAIL_USER"], st.secrets["GMAIL_PASSWORD"])
-                        msg = MIMEText(edited_pitch)
-                        msg['Subject'] = f"Proposal for {lead['Business']}"
+                        msg = MIMEText(final_text)
+                        msg['Subject'] = "Business Proposal"
                         msg['From'] = st.secrets["GMAIL_USER"]
+                        msg['To'] = lead['Email']
+                        server.sendmail(st.secrets["GMAIL_USER"], lead['Email'], msg.as_string())
+                        server.quit()
+                        st.success("Sent!")
+                    except Exception as e:
+                        st.error(f"Error: {e}")
+    else:
+        st.info("Pehle leads nikalein.")
