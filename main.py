@@ -14,22 +14,27 @@ LIGHT_LOGO = "https://raw.githubusercontent.com/Vantedge-Omni-Agents/Vantedge-Ou
 
 st.set_page_config(page_title="Vantedge AI", page_icon=DARK_LOGO, layout="wide")
 
-# Theme Detection for Sidebar Logo
+# Theme Based Logo Logic
 is_dark = st.get_option("theme.base") == "dark"
 st.sidebar.image(DARK_LOGO if is_dark else LIGHT_LOGO, use_container_width=True)
 st.sidebar.title("Vantedge Control")
 
-# --- 2. EMAIL SCRAPER LOGIC (Kud fetch karne ke liye) ---
-def fetch_emails_from_url(url):
+# --- 2. ADVANCED EMAIL SCRAPER ---
+def auto_fetch_email(url):
     try:
-        response = requests.get(url, timeout=5)
-        # Email pattern matching
+        # Business website ko scan karna
+        headers = {'User-Agent': 'Mozilla/5.0'}
+        response = requests.get(url, headers=headers, timeout=8)
+        
+        # Regex to find emails
         emails = re.findall(r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}', response.text)
-        # Filter out common junk emails
-        valid_emails = [e for e in set(emails) if not e.endswith(('.png', '.jpg', '.gif', 'sentry.io'))]
-        return valid_emails[0] if valid_emails else "No Email Found"
+        
+        # Filter junk (like images or generic dev emails)
+        clean_emails = [e for e in set(emails) if not e.endswith(('.png', '.jpg', '.gif', 'sentry.io', 'example.com'))]
+        
+        return clean_emails[0] if clean_emails else "Email Not Found"
     except:
-        return "Connection Error"
+        return "Not Reachable"
 
 # --- 3. SECRETS ---
 try:
@@ -37,74 +42,72 @@ try:
     GROQ_KEY = st.secrets["GROQ_API_KEY"]
     GMAIL_USER = st.secrets["GMAIL_USER"]
     GMAIL_PASS = st.secrets["GMAIL_PASSWORD"]
-except:
-    st.error("Secrets setup missing!")
+except Exception as e:
+    st.error(f"Missing Secrets: {e}")
     st.stop()
 
 client = Groq(api_key=GROQ_KEY)
 
-# --- 4. UI INTERFACE ---
+# --- 4. APP UI ---
 st.title("Vantedge-OutReach-Intelligence 🚀")
 tabs = st.tabs(["Lead Hunter", "AI Outreach"])
 
 with tabs[0]:
     c1, c2 = st.columns(2)
-    niche = c1.text_input("Target Niche", placeholder="e.g. Marketing Agency")
-    city = c2.text_input("Target City", placeholder="e.g. Pakistan")
+    niche = c1.text_input("Niche (e.g. Real Estate Agency)")
+    city = c2.text_input("City (e.g. Lahore)")
     
-    if st.button("Start Extraction"):
-        with st.spinner("Directly fetching emails from websites..."):
+    if st.button("Start Auto-Extraction"):
+        with st.spinner("Hunting for real business websites..."):
+            # Query refined to skip PDFs and directories
+            search_query = f'"{niche}" in {city} -filetype:pdf -site:facebook.com'
             url = "https://google.serper.dev/search"
-            # AI focused query to avoid PDFs and lists
-            query = f'"{niche}" site:.com OR site:.pk "{city}" contact email'
             headers = {'X-API-KEY': SERPER_KEY, 'Content-Type': 'application/json'}
-            res = requests.post(url, headers=headers, data=json.dumps({"q": query, "num": 10})).json()
+            res = requests.post(url, headers=headers, data=json.dumps({"q": search_query})).json()
             
             leads_data = []
             if "organic" in res:
-                for lead in res["organic"]:
-                    link = lead.get('link', '')
-                    # PDFs ko skip karo
-                    if ".pdf" in link.lower(): continue
+                for result in res["organic"]:
+                    site_url = result.get('link', '')
+                    email = auto_fetch_email(site_url) # Automatic Fetching
                     
-                    scraped_email = fetch_emails_from_url(link)
                     leads_data.append({
-                        "Agency": lead['title'],
-                        "Website": link,
-                        "Email": scraped_email
+                        "Business Name": result['title'],
+                        "Website": site_url,
+                        "Found Email": email
                     })
                 
                 st.session_state.leads = leads_data
-                st.success(f"Found {len(leads_data)} potential agencies!")
+                st.success("Extraction Complete!")
                 st.table(pd.DataFrame(leads_data))
 
 with tabs[1]:
     if 'leads' in st.session_state:
         for i, lead in enumerate(st.session_state.leads):
-            if lead['Email'] != "No Email Found" and lead['Email'] != "Connection Error":
-                with st.expander(f"Contact: {lead['Agency']}"):
-                    st.write(f"**Target Email:** {lead['Email']}")
-                    if st.button(f"Generate & Send to {lead['Agency']}", key=f"btn_{i}"):
-                        # Generate Pitch using Groq
-                        prompt = f"Write a 2-line business pitch for {lead['Agency']}. Website: {lead['Website']}"
+            if lead['Found Email'] not in ["Email Not Found", "Not Reachable"]:
+                with st.expander(f"Pitch to: {lead['Business Name']}"):
+                    st.write(f"**Target:** {lead['Found Email']}")
+                    if st.button(f"Generate & Send AI Pitch", key=f"send_{i}"):
+                        # AI Generation
+                        prompt = f"Write a short, professional pitch to {lead['Business Name']} for marketing services."
                         pitch = client.chat.completions.create(
                             messages=[{"role": "user", "content": prompt}],
                             model="llama-3.3-70b-versatile"
                         ).choices[0].message.content
                         
-                        # Send Email
-                        msg = MIMEText(pitch)
-                        msg['Subject'] = "Partnership Proposal"
-                        msg['From'] = GMAIL_USER
-                        msg['To'] = lead['Email']
-                        
+                        # Sending Logic
                         try:
+                            msg = MIMEText(pitch)
+                            msg['Subject'] = "Business Proposal"
+                            msg['From'] = GMAIL_USER
+                            msg['To'] = lead['Found Email']
+                            
                             server = smtplib.SMTP_SSL('smtp.gmail.com', 465)
                             server.login(GMAIL_USER, GMAIL_PASS)
-                            server.sendmail(GMAIL_USER, lead['Email'], msg.as_string())
+                            server.sendmail(GMAIL_USER, lead['Found Email'], msg.as_string())
                             server.quit()
-                            st.success(f"Sent to {lead['Email']}!")
+                            st.success(f"Email sent to {lead['Found Email']}!")
                         except:
-                            st.error("Failed to send. Check App Password.")
+                            st.error("Check your Gmail App Password.")
     else:
-        st.info("Pehle 'Lead Hunter' tab mein leads nikalen.")
+        st.info("Pehle 'Lead Hunter' tab mein real business leads search karein.")
