@@ -6,19 +6,28 @@ import smtplib
 from email.mime.text import MIMEText
 from groq import Groq
 
-# --- 1. TASKBAR & LOGO SETUP ---
-# Ye code browser ke tab (taskbar) mein logo aur naam set karta hai
-logo_url = "https://raw.githubusercontent.com/Vantedge-Omni-Agents/Vantedge-OutReach-Agent/main/logo.png"
+# --- 1. DYNAMIC LOGO LOGIC ---
+# GitHub links for both versions
+LIGHT_LOGO = "https://raw.githubusercontent.com/Vantedge-Omni-Agents/Vantedge-OutReach-Agent/main/logo_dark.png" 
+DARK_LOGO = "https://raw.githubusercontent.com/Vantedge-Omni-Agents/Vantedge-OutReach-Agent/main/logo_light.png"
 
-st.set_page_config(
-    page_title="Vantedge-OutReach-Agent",
-    page_icon=logo_url, 
-    layout="wide"
-)
+# Theme detect karne ke liye trick
+# Streamlit settings se theme uthata hai
+ms = st.session_state
+if "themes" not in ms: 
+    ms.themes = "light" # Default
 
-# Sidebar mein logo aur title
-st.sidebar.image(logo_url, width=150)
-st.sidebar.title("Vantedge Control")
+# Taskbar Setup
+st.set_page_config(page_title="Vantedge-OutReach-Intelligence", layout="wide")
+
+# Theme ke hisab se logo select karein
+# Note: Ye 'base' check karne ke liye custom CSS/JS lagta hai, 
+# magar sabse asaan tareeka 'Sidebar' icon use karna hai.
+logo_to_use = DARK_LOGO if st.get_option("theme.base") == "dark" else LIGHT_LOGO
+
+# Sidebar Branding
+st.sidebar.image(logo_to_use, width=150)
+st.sidebar.title("Vantedge-OutReach-Beta")
 
 # --- 2. API & GMAIL SECRETS ---
 try:
@@ -46,21 +55,19 @@ def send_email(target, subject, message):
     except:
         return False
 
-# --- 4. APP UI ---
-st.title("Vantedge-OutReach-Agent🚀")
+# --- 4. APP UI (Lead Hunter & Outreach) ---
+st.title("Vantedge-OutReach-Intelligence  🚀")
 
 tab1, tab2 = st.tabs(["Lead Hunter", "AI Outreach"])
 
 with tab1:
-    niche = st.text_input("Niche (e.g. Tech)")
-    city = st.text_input("City (e.g. Karachi)")
-    
+    niche = st.text_input("Niche")
+    city = st.text_input("City")
     if st.button("Find Leads"):
         query = f"{niche} companies in {city} email"
         url = "https://google.serper.dev/search"
         headers = {'X-API-KEY': SERPER_KEY, 'Content-Type': 'application/json'}
         data = json.dumps({"q": query, "num": 10})
-        
         res = requests.post(url, headers=headers, data=data).json()
         if "organic" in res:
             st.session_state.data = res["organic"]
@@ -72,6 +79,9 @@ with tab2:
             with st.expander(f"Lead: {item['title']}"):
                 email_addr = st.text_input("Email", key=f"e{i}")
                 if st.button("Generate & Send", key=f"b{i}"):
-                    # AI Pitch Generation
-                    prompt = f"Write a 2-line business email to {item['title']}. Use: {item.get('snippet','')}"
-                    chat
+                    prompt = f"Write a 2-line business email to {item['title']}. Context: {item.get('snippet','')}"
+                    chat = client.chat.completions.create(messages=[{"role": "user", "content": prompt}], model="llama-3.3-70b-versatile")
+                    pitch = chat.choices[0].message.content
+                    if email_addr and send_email(email_addr, "Business Inquiry", pitch):
+                        st.success("Email sent!")
+                        st.write(pitch)
