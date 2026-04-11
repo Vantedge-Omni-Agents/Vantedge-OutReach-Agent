@@ -36,7 +36,7 @@ offer = st.text_area("Your Offer", "I provide high-quality AI automation and lea
 if st.button("Start Automatic Process"):
     with st.spinner("Hunting Leads..."):
         headers = {'X-API-KEY': st.secrets["SERPER_API_KEY"], 'Content-Type': 'application/json'}
-        payload = {"q": f"{niche} in {city}", "num": 50}
+        payload = {"q": f"{niche} in {city}", "num": 100}
         
         try:
             res = requests.post("https://google.serper.dev/places", headers=headers, json=payload).json()
@@ -62,7 +62,7 @@ if st.session_state.leads_data:
         # Agar AI pitch abhi tak nahi bani is business ke liye, toh banao
         if i not in st.session_state.ai_pitches:
             try:
-                prompt = f"Write a punchy 1-sentence cold email to {business_name} offering {offer}. Professional tone."
+                prompt = f"Write a punchy 5-sentence cold email to {business_name} offering {offer}. Professional tone."
                 ai_resp = client.chat.completions.create(
                     messages=[{"role": "user", "content": prompt}],
                     model="llama-3.1-8b-instant"
